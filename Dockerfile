@@ -1,6 +1,7 @@
 ARG PG_VERSION=15.6
 ARG PG_MAJOR_VERSION=15
 ARG VERSION=custom
+ARG pgx_ulid_release=0.1.5
 
 FROM golang:1.20
 
