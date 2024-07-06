@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -v -o /fly/bin/start ./cmd/start
 COPY ./bin/* /fly/bin/
 
 FROM wrouesnel/postgres_exporter:latest AS postgres_exporter
-FROM postgres:${PG_VERSION}
+FROM postgres:${PG_VERSION} as base
 ENV PGDATA=/data/postgresql
 ENV PGPASSFILE=/data/.pgpass
 ARG VERSION
@@ -29,6 +29,30 @@ LABEL fly.app_role=postgres_cluster
 LABEL fly.version=${VERSION}
 LABEL fly.pg-version=${PG_VERSION}
 LABEL fly.pg-manager=repmgr
+
+####################
+# Extension: pgx_ulid
+####################
+FROM base as pgx_ulid
+
+# Download package archive
+ARG pgx_ulid_release
+ADD "https://github.com/pksunkara/pgx_ulid/releases/download/v${pgx_ulid_release}/pgx_ulid-v${pgx_ulid_release}-pg${postgresql_major}-${TARGETARCH}-linux-gnu.deb" \
+    /tmp/pgx_ulid.deb
+
+####################
+# Collect extension packages
+####################
+FROM scratch as extensions
+COPY --from=pgx_ulid /tmp/*.deb /tmp/
+
+####################
+# Build final image
+####################
+FROM base as production
+
+# Setup extensions
+COPY --from=extensions /tmp /tmp
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
     ca-certificates iproute2 curl bash dnsutils vim socat procps ssh gnupg rsync barman-cli barman barman-cli-cloud cron \
@@ -45,6 +69,11 @@ RUN apt-get update && \
 RUN apt-get update && apt-get install --no-install-recommends -y \
     postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR \
     postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR-scripts
+
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    /tmp/*.deb \
+    && rm -rf /var/lib/apt/lists/* /tmp/*
 
 # Haproxy
 RUN curl https://haproxy.debian.net/bernat.debian.org.gpg \
